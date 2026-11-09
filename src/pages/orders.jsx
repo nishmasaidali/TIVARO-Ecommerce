@@ -1,19 +1,17 @@
-import { useMemo, useState, useEffect } from "react";
+
+import { useMemo, useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { useCart } from "../context/cartcontext";
+import { useAuth } from "../context/authcontext";
+import axiosInstance from "../api/axiosinstance";
+import { cancelOrderApi } from "../services/orderservice";
 
-function getCurrentUserKey() {
-  try {
-    const user = JSON.parse(localStorage.getItem("currentUser"));
-
-    if (user) {
-      return String(user.id || user.email);
-    }
-
-    return "guest";
-  } catch {
-    return "guest";
-  }
+function showToast(message, type = "success", title = "Notification") {
+  window.dispatchEvent(
+    new CustomEvent("tivaro-toast", {
+      detail: { message, type, title },
+    })
+  );
 }
 
 function getSavedOrders(userKey) {
@@ -29,34 +27,101 @@ function getSavedOrders(userKey) {
 
 function Orders() {
   const { addToCart } = useCart();
+  const { currentUser } = useAuth();
 
-  const [userKey, setUserKey] = useState(getCurrentUserKey);
+  const userKey = String(
+    currentUser?.id ?? currentUser?.email ?? "guest"
+  );
+
+  const userEmail = currentUser?.email?.toLowerCase();
+
   const [orders, setOrders] = useState([]);
   const [selectedStatus, setSelectedStatus] = useState("All");
   const [cancelReason, setCancelReason] = useState({});
   const [openCancel, setOpenCancel] = useState(null);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Update orders when user logs in or logs out
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const ordersPerPage = 6;
+
+  // Reference to the scrollable orders section
+  const ordersContainerRef = useRef(null);
+
+  // Fetch orders from JSON Server
   useEffect(() => {
-    function handleUserChange() {
-      setUserKey(getCurrentUserKey());
-      setOpenCancel(null);
+    let isMounted = true;
+
+    async function fetchOrders() {
+      setIsLoading(true);
+
+      try {
+        const response = await axiosInstance.get("/orders");
+
+        const allOrders = Array.isArray(response.data)
+          ? response.data
+          : [];
+
+        // Show only the current customer's orders
+        const userOrders = allOrders.filter((order) => {
+          const belongsToUser =
+            String(order.userId || "") === userKey;
+
+          const belongsToEmail =
+            userEmail &&
+            order.customer?.email?.toLowerCase() === userEmail;
+
+          return belongsToUser || belongsToEmail;
+        });
+
+        // Latest orders first
+        userOrders.sort((a, b) => {
+          const dateA = new Date(
+            a.orderDate || a.date || 0
+          ).getTime();
+
+          const dateB = new Date(
+            b.orderDate || b.date || 0
+          ).getTime();
+
+          return dateB - dateA;
+        });
+
+        if (isMounted) {
+          setOrders(userOrders);
+
+          // Keep localStorage synchronized with JSON Server
+          localStorage.setItem(
+            `orders_${userKey}`,
+            JSON.stringify(userOrders)
+          );
+        }
+      } catch (error) {
+        console.error("Error fetching orders:", error);
+
+        // Use localStorage if JSON Server is unavailable
+        if (isMounted) {
+          setOrders(getSavedOrders(userKey));
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
     }
 
-    window.addEventListener("authChanged", handleUserChange);
+    fetchOrders();
+    setSelectedStatus("All");
+    setCurrentPage(1);
+    setOpenCancel(null);
 
     return () => {
-      window.removeEventListener("authChanged", handleUserChange);
+      isMounted = false;
     };
-  }, []);
+  }, [userKey, userEmail]);
 
-  // Load current user's orders
-  useEffect(() => {
-    setOrders(getSavedOrders(userKey));
-    setSelectedStatus("All");
-  }, [userKey]);
-
-  // Filter orders
+  // Filter orders based on selected status
   const filteredOrders = useMemo(() => {
     if (selectedStatus === "All") {
       return orders;
@@ -67,7 +132,38 @@ function Orders() {
     );
   }, [orders, selectedStatus]);
 
-  // Save orders
+  // Pagination calculations
+  const totalPages = Math.ceil(
+    filteredOrders.length / ordersPerPage
+  );
+
+  const startIndex = (currentPage - 1) * ordersPerPage;
+
+  const currentOrders = filteredOrders.slice(
+    startIndex,
+    startIndex + ordersPerPage
+  );
+
+  // Keep the current page valid when filtered orders decrease
+  useEffect(() => {
+    if (totalPages === 0 && currentPage !== 1) {
+      setCurrentPage(1);
+    } else if (totalPages > 0 && currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  // Change page
+  function changePage(page) {
+    setCurrentPage(page);
+
+    ordersContainerRef.current?.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+  }
+
+  // Update React state and localStorage
   function saveOrders(updatedOrders) {
     setOrders(updatedOrders);
 
@@ -77,17 +173,21 @@ function Orders() {
     );
   }
 
-  // Cancel order
-  function cancelOrder(orderId) {
+  // Cancel order in JSON Server
+  async function cancelOrder(orderId) {
     const reason = cancelReason[orderId];
 
     if (!reason || !reason.trim()) {
-      alert("Please enter a cancellation reason.");
+      showToast(
+        "Please enter a cancellation reason.",
+        "error",
+        "Missing Reason"
+      );
       return;
     }
 
     const orderToCancel = orders.find(
-      (order) => order.id === orderId
+      (order) => String(order.id) === String(orderId)
     );
 
     if (
@@ -95,32 +195,66 @@ function Orders() {
       orderToCancel.status === "Delivered" ||
       orderToCancel.status === "Cancelled"
     ) {
-      alert("This order cannot be cancelled.");
+      showToast(
+        "This order cannot be cancelled.",
+        "error",
+        "Cancellation Error"
+      );
       return;
     }
 
-    const updatedOrders = orders.map((order) =>
-      order.id === orderId
-        ? {
-            ...order,
-            status: "Cancelled",
-            cancelledAt: new Date().toISOString(),
-            cancellationReason: reason.trim(),
-          }
-        : order
-    );
+    if (isCancelling) return;
 
-    saveOrders(updatedOrders);
+    setIsCancelling(true);
 
-    setOpenCancel(null);
+    try {
+      // Update the order in db.json
+      const updatedOrder = await cancelOrderApi(
+        orderId,
+        reason.trim()
+      );
 
-    setCancelReason((previous) => ({
-      ...previous,
-      [orderId]: "",
-    }));
+      // Update the displayed orders
+      const updatedOrders = orders.map((order) =>
+        String(order.id) === String(orderId)
+          ? {
+              ...order,
+              ...updatedOrder,
+            }
+          : order
+      );
+
+      // Save the updated orders locally
+      saveOrders(updatedOrders);
+
+      setOpenCancel(null);
+
+      setCancelReason((previous) => ({
+        ...previous,
+        [orderId]: "",
+      }));
+
+      showToast(
+        "Your order has been cancelled successfully.",
+        "success",
+        "Order Cancelled"
+      );
+    } catch (error) {
+      console.error("Cancellation error:", error);
+
+      showToast(
+        error.response?.status === 404
+          ? "Order not found in db.json."
+          : "Unable to cancel order. Please try again.",
+        "error",
+        "Cancellation Failed"
+      );
+    } finally {
+      setIsCancelling(false);
+    }
   }
 
-  // Reorder products
+  // Add previous order products to cart
   function reorder(order) {
     if (!Array.isArray(order.items)) {
       return;
@@ -130,14 +264,15 @@ function Orders() {
       addToCart(product);
     });
 
-    alert("Products have been added to your cart.");
+    showToast(
+      "Products have been added to your cart.",
+      "success",
+      "Reorder"
+    );
   }
 
-  // Format date
   function formatDate(date) {
-    if (!date) {
-      return "Not available";
-    }
+    if (!date) return "Not available";
 
     const parsedDate = new Date(date);
 
@@ -152,62 +287,70 @@ function Orders() {
     });
   }
 
-  // Status style
   function getStatusClass(status) {
     switch (status) {
       case "Pending":
         return "bg-[#E8DDC7] text-[#7A5C2E]";
-
       case "Confirmed":
         return "bg-[#DCE8D8] text-[#48653B]";
-
       case "Shipped":
         return "bg-[#DCE4EE] text-[#3F5F7A]";
-
       case "Delivered":
         return "bg-[#D8E8DF] text-[#35634B]";
-
       case "Cancelled":
         return "bg-[#F0D9D4] text-[#8B4A3B]";
-
       default:
         return "bg-[#E5D8C5] text-[#6B5A4B]";
     }
   }
 
+  const statuses = [
+    "All",
+    "Pending",
+    "Confirmed",
+    "Shipped",
+    "Delivered",
+    "Cancelled",
+  ];
+
   return (
-    <main className="min-h-screen bg-[#F4EFE5] px-5 py-12 text-[#30251E] md:px-10 md:py-16">
-      <div className="mx-auto max-w-6xl">
+    <main className="flex h-[calc(100dvh-72px)] flex-col overflow-hidden bg-[#F4EFE5] px-4 py-5 text-[#30251E] sm:px-7 md:px-10 md:py-6">
 
-        <div className="border-b border-[#E0D4C3] pb-8">
-          <p className="text-xs uppercase tracking-[0.3em] text-[#A17D49]">
-            TIVARO · Your History
-          </p>
+      <div className="mx-auto flex h-full w-full max-w-6xl flex-col">
 
-          <h1 className="mt-4 font-serif text-4xl md:text-5xl">
-            Your Orders
-          </h1>
+        {/* Heading */}
+        <div className="flex shrink-0 items-center justify-between border-b border-[#E0D4C3] pb-4">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.25em] text-[#A17D49]">
+              TIVARO · Your History
+            </p>
 
-          <p className="mt-3 text-sm text-[#766657]">
-            Follow every timeless piece from selection to delivery.
+            <h1 className="mt-1 font-serif text-3xl md:text-4xl">
+              Your Orders
+            </h1>
+
+            <p className="mt-1 text-xs text-[#766657]">
+              Follow every timeless piece from selection to delivery.
+            </p>
+          </div>
+
+          <p className="hidden text-xs text-[#766657] sm:block">
+            {orders.length} {orders.length === 1 ? "Order" : "Orders"}
           </p>
         </div>
 
-        {orders.length > 0 && (
-          <div className="mt-8 flex flex-wrap gap-3">
-            {[
-              "All",
-              "Pending",
-              "Confirmed",
-              "Shipped",
-              "Delivered",
-              "Cancelled",
-            ].map((status) => (
+        {/* Status filters */}
+        {orders.length > 0 && !isLoading && (
+          <div className="mt-4 flex shrink-0 flex-wrap gap-2">
+            {statuses.map((status) => (
               <button
                 key={status}
                 type="button"
-                onClick={() => setSelectedStatus(status)}
-                className={`border px-4 py-2 text-xs uppercase tracking-wider transition ${
+                onClick={() => {
+                  setSelectedStatus(status);
+                  setCurrentPage(1);
+                }}
+                className={`border px-3 py-2 text-[10px] uppercase tracking-wider transition ${
                   selectedStatus === status
                     ? "border-[#30251E] bg-[#30251E] text-[#F4EFE5]"
                     : "border-[#D8C9B5] text-[#6B5A4B] hover:border-[#A17D49]"
@@ -219,208 +362,279 @@ function Orders() {
           </div>
         )}
 
-        {orders.length === 0 && (
-          <div className="py-24 text-center">
-            <p className="text-xs uppercase tracking-[0.3em] text-[#A17D49]">
-              Your TIVARO Story Begins Here
-            </p>
+        {/* Orders area */}
+        <div
+          ref={ordersContainerRef}
+          className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1"
+        >
 
-            <h2 className="mt-5 font-serif text-3xl">
-              No Orders Yet
-            </h2>
+          {/* Loading */}
+          {isLoading && (
+            <div className="flex h-full min-h-[200px] items-center justify-center text-sm text-[#766657]">
+              Loading your orders...
+            </div>
+          )}
 
-            <p className="mx-auto mt-4 max-w-md text-sm leading-7 text-[#766657]">
-              Your selected timepieces will appear here once you place an order.
-            </p>
+          {/* No orders */}
+          {!isLoading && orders.length === 0 && (
+            <div className="flex h-full min-h-[250px] flex-col items-center justify-center text-center">
+              <p className="text-[10px] uppercase tracking-[0.25em] text-[#A17D49]">
+                Your TIVARO Story Begins Here
+              </p>
 
-            <Link
-              to="/products"
-              className="mt-8 inline-block bg-[#30251E] px-8 py-4 text-xs uppercase tracking-[0.2em] text-[#F4EFE5] transition hover:bg-[#A17D49]"
-            >
-              Explore Watches
-            </Link>
-          </div>
-        )}
+              <h2 className="mt-3 font-serif text-3xl">
+                No Orders Yet
+              </h2>
 
-        {orders.length > 0 && filteredOrders.length === 0 && (
-          <div className="py-20 text-center">
-            <p className="text-sm text-[#766657]">
-              No orders found with this status.
-            </p>
-          </div>
-        )}
+              <p className="mt-2 max-w-md text-sm text-[#766657]">
+                Your selected timepieces will appear here once you place an order.
+              </p>
 
-        <div className="mt-8 space-y-8">
-          {filteredOrders.map((order, index) => {
-            const items = Array.isArray(order.items)
-              ? order.items
-              : [];
-
-            const canCancel =
-              order.status !== "Delivered" &&
-              order.status !== "Cancelled";
-
-            return (
-              <article
-                key={order.id || index}
-                className="border border-[#E0D4C3] bg-[#FAF7F1]"
+              <Link
+                to="/products"
+                className="mt-5 bg-[#30251E] px-7 py-3 text-[10px] uppercase tracking-[0.2em] text-[#F4EFE5] transition hover:bg-[#A17D49]"
               >
-                <div className="flex flex-col gap-4 border-b border-[#E5D8C5] px-5 py-5 sm:flex-row sm:items-center sm:justify-between md:px-7">
-                  <div>
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-[#8A745D]">
-                      Order
-                    </p>
+                Explore Watches
+              </Link>
+            </div>
+          )}
 
-                    <h2 className="mt-1 font-serif text-lg">
-                      {order.id || "Order"}
-                    </h2>
+          {/* No matching orders */}
+          {!isLoading &&
+            orders.length > 0 &&
+            filteredOrders.length === 0 && (
+              <div className="flex h-full min-h-[200px] items-center justify-center text-sm text-[#766657]">
+                No orders found with this status.
+              </div>
+            )}
 
-                    <p className="mt-1 text-xs text-[#766657]">
-                      Placed on {formatDate(order.orderDate)}
-                    </p>
-                  </div>
+          {/* Order cards */}
+          {!isLoading && filteredOrders.length > 0 && (
+            <div className="space-y-4 pb-3">
+              {currentOrders.map((order, index) => {
+                const items = Array.isArray(order.items)
+                  ? order.items
+                  : [];
 
-                  <span
-                    className={`w-fit px-4 py-2 text-[10px] font-medium uppercase tracking-[0.15em] ${getStatusClass(
-                      order.status
-                    )}`}
+                const canCancel =
+                  order.status !== "Delivered" &&
+                  order.status !== "Cancelled";
+
+                return (
+                  <article
+                    key={order.id || index}
+                    className="border border-[#E0D4C3] bg-[#FAF7F1]"
                   >
-                    {order.status || "Pending"}
-                  </span>
-                </div>
-
-                <div className="divide-y divide-[#E5D8C5]">
-                  {items.map((product, productIndex) => (
-                    <div
-                      key={product.id || productIndex}
-                      className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center md:px-7"
-                    >
-                      <div className="flex h-24 w-full shrink-0 items-center justify-center bg-[#EEE8DE] p-3 sm:w-24">
-                        <img
-                          src={product.image}
-                          alt={product.name || "Watch"}
-                          className="h-full w-full object-contain"
-                        />
-                      </div>
-
-                      <div className="flex-1">
-                        <p className="text-[10px] uppercase tracking-[0.18em] text-[#A17D49]">
-                          {product.brand || "TIVARO"}
-                        </p>
-
-                        <h3 className="mt-1 font-serif text-lg">
-                          {product.name || "Watch"}
-                        </h3>
-
-                        <p className="mt-2 text-xs text-[#766657]">
-                          Quantity: {Number(product.quantity) || 1}
-                        </p>
-                      </div>
-
-                      <p className="font-serif text-base">
-                        ₹
-                        {(
-                          Number(product.price) *
-                          (Number(product.quantity) || 1)
-                        ).toLocaleString("en-IN")}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="border-t border-[#E5D8C5] bg-[#F4EFE5] p-5 md:px-7">
-                  <div className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
-                    <div>
-                      <p className="text-[10px] uppercase tracking-wider text-[#8A745D]">
-                        Payment
-                      </p>
-                      <p className="mt-1">
-                        {order.paymentMethod || "Not available"}
-                      </p>
-                    </div>
-
-                    <div>
-                      <p className="text-[10px] uppercase tracking-wider text-[#8A745D]">
-                        Total
-                      </p>
-                      <p className="mt-1 font-medium">
-                        ₹{Number(order.total || 0).toLocaleString("en-IN")}
-                      </p>
-                    </div>
-
-                    {order.status !== "Cancelled" && (
+                    {/* Order heading */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E5D8C5] px-4 py-3 md:px-5">
                       <div>
-                        <p className="text-[10px] uppercase tracking-wider text-[#8A745D]">
-                          Estimated Delivery
+                        <p className="text-[9px] uppercase tracking-[0.18em] text-[#8A745D]">
+                          Order ID
                         </p>
-                        <p className="mt-1">
-                          {formatDate(order.estimatedDelivery)}
+
+                        <h2 className="font-serif text-base">
+                          {order.id || "Order"}
+                        </h2>
+
+                        <p className="text-[10px] text-[#766657]">
+                          Placed on{" "}
+                          {formatDate(
+                            order.orderDate || order.date
+                          )}
                         </p>
                       </div>
-                    )}
-                  </div>
 
-                  <div className="mt-6 flex flex-wrap gap-3">
-                    {canCancel && (
-                      <button
-                        type="button"
-                        onClick={() => setOpenCancel(order.id)}
-                        className="border border-[#9B6554] px-5 py-3 text-xs uppercase tracking-wider text-[#9B6554] transition hover:bg-[#9B6554] hover:text-white"
+                      <span
+                        className={`px-3 py-1.5 text-[9px] font-medium uppercase tracking-wider ${getStatusClass(
+                          order.status
+                        )}`}
                       >
-                        Cancel Order
-                      </button>
-                    )}
+                        {order.status || "Pending"}
+                      </span>
+                    </div>
 
-                    <button
-                      type="button"
-                      onClick={() => reorder(order)}
-                      className="border border-[#A17D49] px-5 py-3 text-xs uppercase tracking-wider text-[#6B5A4B] transition hover:bg-[#A17D49] hover:text-white"
-                    >
-                      Reorder
-                    </button>
-                  </div>
+                    {/* Products */}
+                    <div className="divide-y divide-[#E5D8C5]">
+                      {items.map((product, productIndex) => (
+                        <div
+                          key={product.id || productIndex}
+                          className="flex items-center gap-3 px-4 py-3 md:px-5"
+                        >
+                          <div className="flex h-16 w-16 shrink-0 items-center justify-center bg-[#EEE8DE] p-2">
+                            <img
+                              src={product.image}
+                              alt={product.name || "Watch"}
+                              className="h-full w-full object-contain"
+                            />
+                          </div>
 
-                  {openCancel === order.id && canCancel && (
-                    <div className="mt-6 border-t border-[#E0D4C3] pt-5">
-                      <label className="text-xs uppercase tracking-wider text-[#766657]">
-                        Why are you cancelling this order?
-                      </label>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[9px] uppercase tracking-wider text-[#A17D49]">
+                              {product.brand || "TIVARO"}
+                            </p>
 
-                      <textarea
-                        value={cancelReason[order.id] || ""}
-                        onChange={(event) =>
-                          setCancelReason((previous) => ({
-                            ...previous,
-                            [order.id]: event.target.value,
-                          }))
-                        }
-                        className="mt-3 min-h-24 w-full border border-[#D8C9B5] bg-[#FAF7F1] p-3 text-sm outline-none"
-                        placeholder="Enter your reason..."
-                      />
+                            <h3 className="truncate font-serif text-sm">
+                              {product.name || "Watch"}
+                            </h3>
 
-                      <div className="mt-4 flex gap-3">
+                            <p className="mt-1 text-[10px] text-[#766657]">
+                              Quantity: {Number(product.quantity) || 1}
+                            </p>
+                          </div>
+
+                          <p className="shrink-0 text-sm font-medium">
+                            ₹
+                            {(
+                              Number(product.price) *
+                              (Number(product.quantity) || 1)
+                            ).toLocaleString("en-IN")}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Order information */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E5D8C5] bg-[#F4EFE5] px-4 py-3 md:px-5">
+                      <div className="flex flex-wrap gap-x-6 gap-y-2">
+                        <div>
+                          <p className="text-[9px] uppercase tracking-wider text-[#8A745D]">
+                            Payment
+                          </p>
+
+                          <p className="text-xs">
+                            {order.paymentMethod || "Not available"}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-[9px] uppercase tracking-wider text-[#8A745D]">
+                            Total
+                          </p>
+
+                          <p className="text-xs font-semibold">
+                            ₹
+                            {Number(order.total || 0).toLocaleString(
+                              "en-IN"
+                            )}
+                          </p>
+                        </div>
+
+                        {order.status !== "Cancelled" && (
+                          <div>
+                            <p className="text-[9px] uppercase tracking-wider text-[#8A745D]">
+                              Estimated Delivery
+                            </p>
+
+                            <p className="text-xs">
+                              {formatDate(order.estimatedDelivery)}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        {canCancel && (
+                          <button
+                            type="button"
+                            disabled={isCancelling}
+                            onClick={() =>
+                              setOpenCancel(
+                                openCancel === order.id
+                                  ? null
+                                  : order.id
+                              )
+                            }
+                            className="border border-[#9B6554] px-3 py-2 text-[9px] uppercase tracking-wider text-[#9B6554] transition hover:bg-[#9B6554] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Cancel Order
+                          </button>
+                        )}
+
                         <button
                           type="button"
-                          onClick={() => cancelOrder(order.id)}
-                          className="bg-[#9B6554] px-5 py-3 text-xs uppercase tracking-wider text-white"
+                          onClick={() => reorder(order)}
+                          className="border border-[#A17D49] px-3 py-2 text-[9px] uppercase tracking-wider text-[#6B5A4B] transition hover:bg-[#A17D49] hover:text-white"
                         >
-                          Confirm Cancellation
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setOpenCancel(null)}
-                          className="border border-[#D8C9B5] px-5 py-3 text-xs uppercase tracking-wider"
-                        >
-                          Keep Order
+                          Reorder
                         </button>
                       </div>
                     </div>
-                  )}
-                </div>
-              </article>
-            );
-          })}
+
+                    {/* Cancellation form */}
+                    {openCancel === order.id && canCancel && (
+                      <div className="border-t border-[#E0D4C3] p-4">
+                        <label className="text-[10px] uppercase tracking-wider text-[#766657]">
+                          Why are you cancelling this order?
+                        </label>
+
+                        <textarea
+                          value={cancelReason[order.id] || ""}
+                          onChange={(event) =>
+                            setCancelReason((previous) => ({
+                              ...previous,
+                              [order.id]: event.target.value,
+                            }))
+                          }
+                          disabled={isCancelling}
+                          className="mt-2 min-h-16 w-full border border-[#D8C9B5] bg-[#FAF7F1] p-2 text-sm outline-none focus:border-[#A17D49]"
+                          placeholder="Enter your reason..."
+                        />
+
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={isCancelling}
+                            onClick={() => cancelOrder(order.id)}
+                            className="bg-[#9B6554] px-4 py-2 text-[9px] uppercase tracking-wider text-white disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {isCancelling
+                              ? "Cancelling..."
+                              : "Confirm Cancellation"}
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={isCancelling}
+                            onClick={() => setOpenCancel(null)}
+                            className="border border-[#D8C9B5] px-4 py-2 text-[9px] uppercase tracking-wider"
+                          >
+                            Keep Order
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Pagination */}
+          {!isLoading && totalPages > 1 && (
+            <div className="mt-8 flex items-center justify-center gap-6 pb-4">
+              <button
+                type="button"
+                onClick={() => changePage(currentPage - 1)}
+                disabled={currentPage === 1}
+                className="rounded-full border border-[#D9CBB7] px-7 py-3 text-sm text-[#30251E] transition hover:bg-[#30251E] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                ← Previous
+              </button>
+
+              <span className="text-sm text-[#766657]">
+                Page {currentPage} of {totalPages}
+              </span>
+
+              <button
+                type="button"
+                onClick={() => changePage(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                className="rounded-full border border-[#D9CBB7] px-7 py-3 text-sm text-[#30251E] transition hover:bg-[#30251E] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Next →
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </main>

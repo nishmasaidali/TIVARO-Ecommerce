@@ -11,6 +11,10 @@ function Wishlist() {
 
   const { addToCart } = useCart();
 
+  // Check wishlist data in Console
+  console.log("Wishlist after login:", wishlist);
+  console.log("Wishlist product count:", wishlist.length);
+
   const handleAddToCart = (product) => {
     addToCart({
       ...product,

@@ -26,6 +26,9 @@ function ProductCard({ product }) {
   const added = isInCart(product.id);
   const productUrl = getProductUrl(product);
 
+  const stock = Number(product.stock ?? 0);
+  const isOutOfStock = stock <= 0;
+
   function toggleWishlist() {
     if (saved) {
       removeFromWishlist(product.id);
@@ -44,6 +47,12 @@ function ProductCard({ product }) {
           {product.newArrival && (
             <span className="absolute left-3 top-3 z-10 bg-[#A17D49] px-3 py-1.5 text-[9px] uppercase tracking-[0.18em] text-white">
               New Arrival
+            </span>
+          )}
+
+          {isOutOfStock && (
+            <span className="absolute bottom-3 left-3 z-10 bg-[#30251E] px-3 py-2 text-[9px] font-semibold uppercase tracking-[0.15em] text-white">
+              Out of Stock
             </span>
           )}
 
@@ -93,6 +102,13 @@ function ProductCard({ product }) {
           </p>
         </Link>
 
+        {/* Stock status */}
+        <p className={`mt-2 text-xs font-medium ${
+          isOutOfStock ? "text-red-600" : "text-green-700"
+        }`}>
+          {isOutOfStock ? "Out of Stock" : `In Stock: ${stock}`}
+        </p>
+
         <div className="mt-4 flex items-center justify-between border-t border-[#E5D8C5] pt-3">
           <span className="text-[10px] uppercase tracking-[0.15em] text-[#766657]">
             {product.type || "Classic Collection"}
@@ -109,15 +125,19 @@ function ProductCard({ product }) {
         {/* Add to Cart */}
         <button
           type="button"
-          disabled={added}
+          disabled={added || isOutOfStock}
           onClick={() => addToCart(product)}
           className={`mt-4 w-full border py-3 text-[10px] font-semibold uppercase tracking-[0.18em] transition ${
-            added
+            added || isOutOfStock
               ? "cursor-not-allowed border-[#A17D49] bg-[#E5D8C5] text-[#766657]"
               : "border-[#30251E] bg-[#30251E] text-[#F4EFE5] hover:bg-[#A17D49] hover:border-[#A17D49]"
           }`}
         >
-          {added ? "Added to Cart ✓" : "Add to Cart"}
+          {isOutOfStock
+            ? "Out of Stock"
+            : added
+              ? "Added to Cart ✓"
+              : "Add to Cart"}
         </button>
       </div>
     </div>

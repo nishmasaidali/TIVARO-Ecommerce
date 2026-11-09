@@ -17,6 +17,22 @@ export function AuthProvider({ children }) {
     window.dispatchEvent(new Event("authChanged"));
   }
 
+  function updateCurrentUser(updatedUser) {
+    const updatedData = {
+      ...currentUser,
+      ...updatedUser,
+    };
+
+    localStorage.setItem(
+      "currentUser",
+      JSON.stringify(updatedData)
+    );
+
+    setCurrentUser(updatedData);
+
+    window.dispatchEvent(new Event("authChanged"));
+  }
+
   function logout() {
     localStorage.removeItem("currentUser");
     setCurrentUser(null);
@@ -25,7 +41,14 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ currentUser, login, logout }}>
+    <AuthContext.Provider
+      value={{
+        currentUser,
+        login,
+        logout,
+        updateCurrentUser,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

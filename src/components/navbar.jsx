@@ -1,57 +1,103 @@
+
 import { useState } from "react";
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
+
+import {
+  Heart,
+  ShoppingBag,
+  LogOut,
+  UserRound,
+  Package,
+  ChevronDown,
+  Menu,
+  X,
+} from "lucide-react";
+
 import { useCart } from "../context/cartcontext";
 import { useWishlist } from "../context/wishlistcontext";
 import { useAuth } from "../context/authcontext";
 
+const collections = [
+  "Vintage Essentials",
+  "Heritage Collection",
+  "Signature Luxury",
+  "Party & Evening",
+];
+
 function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [collectionsOpen, setCollectionsOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
-  const { cart } = useCart();
+  const { cart, clearCart } = useCart();
   const { wishlist } = useWishlist();
   const { currentUser, logout } = useAuth();
 
-  const cartCount = cart.reduce(
-    (total, product) => total + product.quantity,
-    0
-  );
+  const navigate = useNavigate();
 
-  const wishlistCount = wishlist.length;
-
-  const linkClass = ({ isActive }) =>
-    `text-xs font-medium uppercase tracking-[0.15em] transition duration-300 ${
-      isActive
-        ? "text-[#A17D49]"
-        : "text-[#6B5A4B] hover:text-[#A17D49]"
-    }`;
+  const cartCount = cart?.length || 0;
+  const wishlistCount = wishlist?.length || 0;
 
   const closeMenu = () => {
     setMenuOpen(false);
+    setCollectionsOpen(false);
+    setProfileOpen(false);
   };
 
-  function handleLogout() {
-    logout();
-    closeMenu();
-  }
+  // Home and Shop styling
+  const linkClass = ({ isActive }) =>
+    `text-xs font-normal tracking-[0.18em] transition-colors ${
+      isActive
+        ? "text-[#A17D49]"
+        : "text-[#30251E] hover:text-[#A17D49]"
+    }`;
+
+  const userInitial =
+    currentUser?.name?.trim()?.charAt(0)?.toUpperCase() || "U";
+
+  const handleLogout = () => {
+    window.dispatchEvent(
+      new CustomEvent("tivaro-toast", {
+        detail: {
+          type: "confirm",
+          title: "Confirm Logout",
+          message: "Are you sure you want to logout?",
+          onConfirm: () => {
+            clearCart();
+            logout();
+            closeMenu();
+            navigate("/");
+          },
+        },
+      })
+    );
+  };
+
+  const actionIconClass =
+    "relative flex items-center justify-center text-[#30251E] transition hover:text-[#A17D49]";
+
+  const badgeClass =
+    "absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#A17D49] px-1 text-[9px] font-medium text-white";
 
   return (
-    <header className="sticky top-0 z-50 border-b border-[#E5D8C5] bg-[#F4EFE5]">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 sm:px-8">
+    <header className="sticky top-0 z-50 border-b border-[#D9CBB7] bg-[#F4EFE5]">
+      <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 lg:px-8">
 
-        {/* Brand */}
-        <Link to="/" onClick={closeMenu} className="flex flex-col">
-          <span className="font-serif text-2xl font-bold tracking-[0.2em] text-[#30251E] md:text-3xl">
-            TIVARO
-          </span>
-
-          <span className="mt-1 text-[8px] tracking-[0.32em] text-[#A17D49]">
-            TIMELESS ELEGANCE
+        {/* Logo */}
+        <Link
+          to="/"
+          onClick={closeMenu}
+          className="font-serif text-2xl tracking-[0.25em] text-[#30251E]"
+        >
+          TIVARO
+          <span className="mt-1 block text-[9px] tracking-[0.35em] text-[#A17D49]">
+            THE VINTAGE COLLECTION
           </span>
         </Link>
 
         {/* Desktop Navigation */}
-        <nav className="hidden items-center gap-7 md:flex">
-          <NavLink to="/" end className={linkClass}>
+        <nav className="hidden items-center gap-8 lg:flex">
+          <NavLink to="/" className={linkClass}>
             Home
           </NavLink>
 
@@ -59,270 +105,378 @@ function Navbar() {
             Shop
           </NavLink>
 
-          <NavLink to="/products?category=Men" className={linkClass}>
-            Men
-          </NavLink>
+          {/* Collections Dropdown */}
+          <div
+            className="relative"
+            onMouseEnter={() => setCollectionsOpen(true)}
+            onMouseLeave={() => setCollectionsOpen(false)}
+          >
+            <button
+              type="button"
+              onClick={() =>
+                setCollectionsOpen((previous) => !previous)
+              }
+              className="text-[11px] font-normal tracking-[0.18em] text-[#30251E] transition-colors hover:text-[#A17D49]"
+            >
+              <span className="flex items-center gap-2">
+                Collections
 
-          <NavLink to="/products?category=Women" className={linkClass}>
-            Women
-          </NavLink>
+                <ChevronDown
+                  size={12}
+                  className={`transition-transform ${
+                    collectionsOpen ? "rotate-180" : ""
+                  }`}
+                />
+              </span>
+            </button>
 
-          {/* Orders */}
-          {currentUser && (
-            <NavLink to="/orders" className={linkClass}>
-              Orders
-            </NavLink>
-          )}
+            {collectionsOpen && (
+              <div className="absolute left-0 top-full z-50 w-64 border border-[#D9CBB7] bg-[#F4EFE5] py-3 shadow-xl">
+                {collections.map((collection) => (
+                  <Link
+                    key={collection}
+                    to={`/products?collection=${encodeURIComponent(collection)}`}
+                    onClick={closeMenu}
+                    className="block px-5 py-3 text-xs tracking-wider text-[#6B5A4B] transition hover:bg-[#E5D8C5] hover:text-[#A17D49]"
+                  >
+                    {collection}
+                  </Link>
+                ))}
+
+                <div className="my-2 border-t border-[#D9CBB7]" />
+
+                <Link
+                  to="/products"
+                  onClick={closeMenu}
+                  className="block px-5 py-3 text-xs font-semibold uppercase tracking-wider text-[#A17D49] hover:bg-[#E5D8C5]"
+                >
+                  View All Collections
+                </Link>
+              </div>
+            )}
+          </div>
         </nav>
 
-        {/* Desktop Wishlist, Cart and Account */}
-        <div className="hidden items-center gap-6 md:flex">
+        {/* Desktop Actions */}
+        <div className="hidden items-center gap-7 lg:flex">
 
           {/* Wishlist */}
-          <NavLink
+          <Link
             to="/wishlist"
-            aria-label={`Wishlist, ${wishlistCount} items`}
-            className={({ isActive }) =>
-              `relative transition ${
-                isActive
-                  ? "text-[#A17D49]"
-                  : "text-[#6B5A4B] hover:text-[#A17D49]"
-              }`
-            }
+            className={actionIconClass}
+            aria-label="Wishlist"
+            title="Wishlist"
           >
-            <svg
-              width="21"
-              height="21"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.6"
-            >
-              <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.5 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z" />
-            </svg>
-
-            {wishlistCount > 0 && (
-              <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#A17D49] px-1 text-[9px] text-white">
-                {wishlistCount}
-              </span>
+            <Heart size={21} strokeWidth={1.6} />
+            {currentUser && wishlistCount > 0 && (
+              <span className={badgeClass}>{wishlistCount}</span>
             )}
-          </NavLink>
+          </Link>
 
           {/* Cart */}
-          <NavLink
+          <Link
             to="/cart"
-            aria-label={`Shopping cart, ${cartCount} items`}
-            className={({ isActive }) =>
-              `relative transition ${
-                isActive
-                  ? "text-[#A17D49]"
-                  : "text-[#6B5A4B] hover:text-[#A17D49]"
-              }`
-            }
+            className={actionIconClass}
+            aria-label="Cart"
+            title="Cart"
           >
-            <svg
-              width="21"
-              height="21"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.6"
-            >
-              <path d="M3 3h2l2.4 12.2a2 2 0 0 0 2 1.6h8.8a2 2 0 0 0 2-1.6L22 8H6" />
-              <circle cx="10" cy="21" r="1" />
-              <circle cx="18" cy="21" r="1" />
-            </svg>
-
-            {cartCount > 0 && (
-              <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#A17D49] px-1 text-[9px] text-white">
-                {cartCount}
-              </span>
+            <ShoppingBag size={21} strokeWidth={1.6} />
+            {currentUser && cartCount > 0 && (
+              <span className={badgeClass}>{cartCount}</span>
             )}
-          </NavLink>
+          </Link>
 
-          {/* Account */}
+          {/* Profile Dropdown */}
           {currentUser ? (
-            <div className="flex items-center gap-3">
-              <span className="max-w-[100px] truncate text-xs text-[#6B5A4B]">
-                Hi, {currentUser.name}
-              </span>
-
+            <div className="relative">
               <button
                 type="button"
-                onClick={handleLogout}
-                className="text-xs font-medium uppercase tracking-wider text-[#6B5A4B] transition hover:text-[#A17D49]"
+                onClick={() =>
+                  setProfileOpen((previous) => !previous)
+                }
+                className="flex items-center gap-2"
+                aria-label="Open profile menu"
+                aria-expanded={profileOpen}
               >
-                Logout
+                <div className="flex h-9 w-9 items-center justify-center rounded-full border border-[#A17D49] bg-[#E5D8C5] font-serif text-sm text-[#30251E]">
+                  {userInitial}
+                </div>
+
+                <ChevronDown
+                  size={14}
+                  className={`text-[#766657] transition-transform ${
+                    profileOpen ? "rotate-180" : ""
+                  }`}
+                />
               </button>
+
+              {profileOpen && (
+                <div className="absolute right-0 top-full z-50 mt-3 w-64 border border-[#D9CBB7] bg-[#F4EFE5] shadow-xl">
+
+                  {/* Profile Header */}
+                  <div className="flex items-center gap-3 border-b border-[#D9CBB7] px-4 py-4">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#A17D49] bg-[#E5D8C5] font-serif text-lg text-[#30251E]">
+                      {userInitial}
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-[#30251E]">
+                        {currentUser.name || "My Account"}
+                      </p>
+
+                      <p className="truncate text-[10px] text-[#766657]">
+                        {currentUser.email}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Profile Links */}
+                  <div className="py-2">
+                    <Link
+                      to="/profile"
+                      onClick={closeMenu}
+                      className="flex items-center gap-3 px-5 py-3 text-xs text-[#30251E] transition hover:bg-[#E5D8C5] hover:text-[#A17D49]"
+                    >
+                      <UserRound size={17} strokeWidth={1.6} />
+                      My Profile
+                    </Link>
+
+                    <Link
+                      to="/orders"
+                      onClick={closeMenu}
+                      className="flex items-center gap-3 px-5 py-3 text-xs text-[#30251E] transition hover:bg-[#E5D8C5] hover:text-[#A17D49]"
+                    >
+                      <Package size={17} strokeWidth={1.6} />
+                      My Orders
+                    </Link>
+
+                    <Link
+                      to="/wishlist"
+                      onClick={closeMenu}
+                      className="flex items-center justify-between px-5 py-3 text-xs text-[#30251E] transition hover:bg-[#E5D8C5] hover:text-[#A17D49]"
+                    >
+                      <span className="flex items-center gap-3">
+                        <Heart size={17} strokeWidth={1.6} />
+                        My Wishlist
+                      </span>
+
+                      {wishlistCount > 0 && (
+                        <span className="text-[10px] text-[#A17D49]">
+                          {wishlistCount}
+                        </span>
+                      )}
+                    </Link>
+                  </div>
+
+                  {/* Logout */}
+                  <div className="border-t border-[#D9CBB7] py-2">
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="flex w-full items-center gap-3 px-5 py-3 text-xs text-[#30251E] transition hover:bg-[#E5D8C5] hover:text-[#A17D49]"
+                    >
+                      <LogOut size={17} strokeWidth={1.6} />
+                      Logout
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
-            <NavLink
+            <Link
               to="/login"
-              aria-label="Login"
-              className={({ isActive }) =>
-                `transition ${
-                  isActive
-                    ? "text-[#A17D49]"
-                    : "text-[#6B5A4B] hover:text-[#A17D49]"
-                }`
-              }
+              className="text-xs tracking-wider text-[#30251E] transition hover:text-[#A17D49]"
             >
-              <svg
-                width="22"
-                height="22"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.6"
-              >
-                <circle cx="12" cy="8" r="4" />
-                <path d="M4 21v-2a8 8 0 0 1 16 0v2" />
-              </svg>
-            </NavLink>
+              Account
+            </Link>
           )}
         </div>
 
-        {/* Mobile Menu Button */}
-        <button
-          type="button"
-          onClick={() => setMenuOpen(!menuOpen)}
-          aria-label={menuOpen ? "Close menu" : "Open menu"}
-          aria-expanded={menuOpen}
-          aria-controls="mobile-navigation"
-          className="rounded-md p-2 text-[#30251E] md:hidden"
-        >
-          {menuOpen ? (
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-            >
-              <path d="m18 6-12 12M6 6l12 12" />
-            </svg>
-          ) : (
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-            >
-              <path d="M4 7h16M4 12h16M4 17h16" />
-            </svg>
-          )}
-        </button>
+        {/* Mobile Actions */}
+        <div className="flex items-center gap-5 lg:hidden">
+          <Link
+            to="/wishlist"
+            onClick={closeMenu}
+            className={actionIconClass}
+            aria-label="Wishlist"
+          >
+            <Heart size={21} strokeWidth={1.6} />
+            {currentUser && wishlistCount > 0 && (
+              <span className={badgeClass}>{wishlistCount}</span>
+            )}
+          </Link>
+
+          <Link
+            to="/cart"
+            onClick={closeMenu}
+            className={actionIconClass}
+            aria-label="Cart"
+          >
+            <ShoppingBag size={21} strokeWidth={1.6} />
+            {currentUser && cartCount > 0 && (
+              <span className={badgeClass}>{cartCount}</span>
+            )}
+          </Link>
+
+          {/* Mobile Menu Button */}
+          <button
+            type="button"
+            onClick={() => setMenuOpen((previous) => !previous)}
+            className="text-[#30251E]"
+            aria-label="Toggle navigation menu"
+          >
+            {menuOpen ? <X size={25} /> : <Menu size={25} />}
+          </button>
+        </div>
       </div>
 
       {/* Mobile Navigation */}
       {menuOpen && (
-        <div
-          id="mobile-navigation"
-          className="border-t border-[#E5D8C5] bg-[#F4EFE5] px-6 py-6 md:hidden"
-        >
-          <nav className="flex flex-col gap-6">
+        <nav className="max-h-[80vh] overflow-y-auto border-t border-[#D9CBB7] bg-[#F4EFE5] px-5 py-4 lg:hidden">
 
-            <NavLink
-              to="/"
-              end
-              className={linkClass}
-              onClick={closeMenu}
-            >
-              Home
-            </NavLink>
+          {/* Mobile Profile Header */}
+          {currentUser && (
+            <div className="flex items-center gap-3 border-b border-[#D9CBB7] py-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#A17D49] bg-[#E5D8C5] font-serif text-lg text-[#30251E]">
+                {userInitial}
+              </div>
 
-            <NavLink
-              to="/products"
-              className={linkClass}
-              onClick={closeMenu}
-            >
-              Shop All
-            </NavLink>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-[#30251E]">
+                  {currentUser.name || "My Account"}
+                </p>
 
-            <NavLink
-              to="/products?category=Men"
-              className={linkClass}
-              onClick={closeMenu}
-            >
-              Men
-            </NavLink>
-
-            <NavLink
-              to="/products?category=Women"
-              className={linkClass}
-              onClick={closeMenu}
-            >
-              Women
-            </NavLink>
-
-            {/* Orders */}
-            {currentUser && (
-              <NavLink
-                to="/orders"
-                className={linkClass}
-                onClick={closeMenu}
-              >
-                My Orders
-              </NavLink>
-            )}
-
-            <div className="border-t border-[#E5D8C5] pt-5">
-
-              {/* Wishlist */}
-              <NavLink
-                to="/wishlist"
-                onClick={closeMenu}
-                className="flex items-center justify-between text-sm text-[#6B5A4B]"
-              >
-                Wishlist
-                <span>{wishlistCount}</span>
-              </NavLink>
-
-              {/* Cart */}
-              <NavLink
-                to="/cart"
-                onClick={closeMenu}
-                className="mt-5 flex items-center justify-between text-sm text-[#6B5A4B]"
-              >
-                Shopping Cart
-                <span>{cartCount}</span>
-              </NavLink>
-
-              {/* Mobile Account */}
-              {currentUser ? (
-                <>
-                  <div className="mt-5 flex items-center justify-between text-sm text-[#6B5A4B]">
-                    <span>
-                      Hi, {currentUser.name}
-                    </span>
-
-                    <span className="text-[#A17D49]">✓</span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleLogout}
-                    className="mt-5 w-full border border-[#A17D49] py-3 text-xs font-semibold uppercase tracking-widest text-[#6B5A4B] transition hover:bg-[#A17D49] hover:text-white"
-                  >
-                    Logout
-                  </button>
-                </>
-              ) : (
-                <NavLink
-                  to="/login"
-                  onClick={closeMenu}
-                  className="mt-5 flex items-center justify-between text-sm text-[#6B5A4B]"
-                >
-                  My Account
-                  <span>→</span>
-                </NavLink>
-              )}
+                <p className="truncate text-[10px] text-[#766657]">
+                  {currentUser.email}
+                </p>
+              </div>
             </div>
-          </nav>
-        </div>
+          )}
+
+          {/* Mobile Home */}
+          <NavLink
+            to="/"
+            onClick={closeMenu}
+            className={({ isActive }) =>
+              `block border-b border-[#D9CBB7] py-4 text-xs tracking-widest ${
+                isActive ? "text-[#A17D49]" : "text-[#30251E]"
+              }`
+            }
+          >
+            Home
+          </NavLink>
+
+          {/* Mobile Shop */}
+          <NavLink
+            to="/products"
+            onClick={closeMenu}
+            className={({ isActive }) =>
+              `block border-b border-[#D9CBB7] py-4 text-xs tracking-widest ${
+                isActive ? "text-[#A17D49]" : "text-[#30251E]"
+              }`
+            }
+          >
+            Shop
+          </NavLink>
+
+          {/* Mobile Collections */}
+          <div className="border-b border-[#D9CBB7] py-3">
+            <button
+              type="button"
+              onClick={() =>
+                setCollectionsOpen((previous) => !previous)
+              }
+              className="flex w-full items-center justify-between py-2 text-[11px] tracking-widest text-[#30251E]"
+            >
+              Collections
+
+              <ChevronDown
+                size={12}
+                className={`transition-transform ${
+                  collectionsOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+
+            {collectionsOpen && (
+              <div className="border-l border-[#D9CBB7] pl-4">
+                {collections.map((collection) => (
+                  <Link
+                    key={collection}
+                    to={`/products?collection=${encodeURIComponent(collection)}`}
+                    onClick={closeMenu}
+                    className="block py-3 text-xs text-[#6B5A4B] transition hover:text-[#A17D49]"
+                  >
+                    {collection}
+                  </Link>
+                ))}
+
+                <Link
+                  to="/products"
+                  onClick={closeMenu}
+                  className="block py-3 text-xs font-semibold text-[#A17D49]"
+                >
+                  View All Collections
+                </Link>
+              </div>
+            )}
+          </div>
+
+          {/* Mobile Profile Options */}
+          {currentUser ? (
+            <>
+              <div className="border-b border-[#D9CBB7] py-3">
+                <p className="mb-2 text-[9px] uppercase tracking-[0.2em] text-[#A17D49]">
+                  My Account
+                </p>
+
+                <Link
+                  to="/profile"
+                  onClick={closeMenu}
+                  className="flex items-center gap-3 py-3 text-xs text-[#30251E] hover:text-[#A17D49]"
+                >
+                  <UserRound size={17} />
+                  My Profile
+                </Link>
+
+                <Link
+                  to="/orders"
+                  onClick={closeMenu}
+                  className="flex items-center gap-3 py-3 text-xs text-[#30251E] hover:text-[#A17D49]"
+                >
+                  <Package size={17} />
+                  My Orders
+                </Link>
+
+                <Link
+                  to="/wishlist"
+                  onClick={closeMenu}
+                  className="flex items-center gap-3 py-3 text-xs text-[#30251E] hover:text-[#A17D49]"
+                >
+                  <Heart size={17} />
+                  My Wishlist
+                </Link>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="flex w-full items-center gap-3 py-4 text-xs tracking-widest text-[#30251E] transition hover:text-[#A17D49]"
+              >
+                <LogOut size={17} />
+                Logout
+              </button>
+            </>
+          ) : (
+            <Link
+              to="/login"
+              onClick={closeMenu}
+              className="block py-4 text-xs tracking-widest text-[#30251E]"
+            >
+              Account / Login
+            </Link>
+          )}
+        </nav>
       )}
     </header>
   );

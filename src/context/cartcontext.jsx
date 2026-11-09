@@ -6,76 +6,85 @@ import {
   useEffect,
 } from "react";
 
+import { useAuth } from "./authcontext";
+
 const CartContext = createContext();
 
-function getCurrentUserKey() {
-  try {
-    const user = JSON.parse(localStorage.getItem("currentUser"));
+function getUserKey(user) {
+  if (!user) return null;
 
-    if (user) {
-      return user.id || user.email;
-    }
+  const userId = user.id ?? user.email;
 
-    return "guest";
-  } catch {
-    return "guest";
-  }
+  return userId ? String(userId) : null;
 }
 
 function getSavedCart(userKey) {
+  if (!userKey) return [];
+
   try {
     const savedCart = localStorage.getItem(`cart_${userKey}`);
+    const parsedCart = savedCart ? JSON.parse(savedCart) : [];
 
-    return savedCart ? JSON.parse(savedCart) : [];
+    return Array.isArray(parsedCart) ? parsedCart : [];
   } catch {
     return [];
   }
 }
 
+function showToast(message, type = "success", title) {
+  window.dispatchEvent(
+    new CustomEvent("tivaro-toast", {
+      detail: { message, type, title },
+    })
+  );
+}
+
 export function CartProvider({ children }) {
-  const [cartData, setCartData] = useState(() => {
-    const userKey = getCurrentUserKey();
+  const { currentUser } = useAuth();
 
-    return {
-      userKey,
-      items: getSavedCart(userKey),
-    };
-  });
+  const userKey = getUserKey(currentUser);
 
-  const cart = cartData.items;
+  const [cartData, setCartData] = useState(() => ({
+    userKey,
+    items: getSavedCart(userKey),
+  }));
 
-  // Listen for login, logout and account changes
+  // Load the correct cart whenever the logged-in user changes
   useEffect(() => {
-    function handleUserChange() {
-      const userKey = getCurrentUserKey();
-
+    if (!userKey) {
       setCartData({
-        userKey,
-        items: getSavedCart(userKey),
+        userKey: null,
+        items: [],
       });
+      return;
     }
 
-    window.addEventListener("authChanged", handleUserChange);
+    setCartData({
+      userKey,
+      items: getSavedCart(userKey),
+    });
+  }, [userKey]);
 
-    return () => {
-      window.removeEventListener("authChanged", handleUserChange);
-    };
-  }, []);
+  // Show cart only when it belongs to the current user
+  const cart =
+    userKey && cartData.userKey === userKey
+      ? cartData.items
+      : [];
 
   // Save cart separately for each user
   useEffect(() => {
-    const currentUserKey = getCurrentUserKey();
+    if (!userKey || cartData.userKey !== userKey) return;
 
-    if (cartData.userKey === currentUserKey) {
-      localStorage.setItem(
-        `cart_${cartData.userKey}`,
-        JSON.stringify(cartData.items)
-      );
-    }
-  }, [cartData]);
+    localStorage.setItem(
+      `cart_${userKey}`,
+      JSON.stringify(cartData.items)
+    );
+  }, [cartData, userKey]);
 
   // Update cart
   const setCart = (newCart) => {
+    if (!userKey || cartData.userKey !== userKey) return;
+
     setCartData((previous) => ({
       ...previous,
       items:
@@ -92,40 +101,115 @@ export function CartProvider({ children }) {
     );
   };
 
-  // Add product only once
+  // Add product only when stock is available
   const addToCart = (product) => {
-    setCart((previousCart) => {
-      const existingProduct = previousCart.find(
-        (item) => String(item.id) === String(product.id)
+    if (!userKey || cartData.userKey !== userKey) {
+      showToast(
+        "Please login to add products to your cart.",
+        "info",
+        "Login Required"
       );
+      return;
+    }
 
-      // If product already exists, do not increase quantity
-      if (existingProduct) {
-        return previousCart;
-      }
+    const stock = Number(product.stock ?? 0);
 
-      // Save the quantity selected on Product Details page
-      return [
-        ...previousCart,
-        {
-          ...product,
-          quantity: Math.max(1, Number(product.quantity) || 1),
-        },
-      ];
-    });
+    // Check stock
+    if (!Number.isFinite(stock) || stock <= 0) {
+      showToast(
+        "This watch is currently out of stock.",
+        "error",
+        "Out of Stock"
+      );
+      return;
+    }
+
+    // Check whether product already exists
+    const alreadyExists = cart.some(
+      (item) => String(item.id) === String(product.id)
+    );
+
+    if (alreadyExists) {
+      showToast(
+        "This product is already in your cart.",
+        "info",
+        "Already Added"
+      );
+      return;
+    }
+
+    const requestedQuantity = Math.max(
+      1,
+      Number(product.quantity) || 1
+    );
+
+    // Prevent adding more than available stock
+    if (requestedQuantity > stock) {
+      showToast(
+        `Only ${stock} watches are available.`,
+        "error",
+        "Insufficient Stock"
+      );
+      return;
+    }
+
+    setCart((previousCart) => [
+      ...previousCart,
+      {
+        ...product,
+        quantity: requestedQuantity,
+      },
+    ]);
+
+    showToast(
+      `${product.name || "Product"} added to your cart.`,
+      "success",
+      "Added to Cart"
+    );
   };
 
   // Remove product completely
   const removeFromCart = (productId) => {
+    const product = cart.find(
+      (item) => String(item.id) === String(productId)
+    );
+
+    if (!product) return;
+
     setCart((previousCart) =>
       previousCart.filter(
         (item) => String(item.id) !== String(productId)
       )
     );
+
+    showToast(
+      `${product.name || "Product"} removed from your cart.`,
+      "info",
+      "Removed from Cart"
+    );
   };
 
   // Increase or decrease quantity
   const updateQuantity = (productId, action) => {
+    const product = cart.find(
+      (item) => String(item.id) === String(productId)
+    );
+
+    if (!product) return;
+
+    if (action === "increase") {
+      const stock = Number(product.stock ?? 0);
+
+      if (product.quantity >= stock) {
+        showToast(
+          `Only ${stock} watches are available.`,
+          "error",
+          "Stock Limit Reached"
+        );
+        return;
+      }
+    }
+
     setCart((previousCart) =>
       previousCart.map((item) => {
         if (String(item.id) !== String(productId)) {

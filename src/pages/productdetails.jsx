@@ -65,6 +65,9 @@ function ProductDetails() {
 
   const saved = isInWishlist(product.id);
 
+  const stock = Number(product.stock ?? 0);
+  const isOutOfStock = stock <= 0;
+
   function handleWishlist() {
     if (saved) {
       removeFromWishlist(product.id);
@@ -74,6 +77,10 @@ function ProductDetails() {
   }
 
   function handleAddToCart() {
+    if (isOutOfStock || quantity > stock) {
+      return;
+    }
+
     addToCart({
       ...product,
       quantity,
@@ -165,6 +172,15 @@ function ProductDetails() {
             ₹{Number(product.price).toLocaleString("en-IN")}
           </p>
 
+          {/* STOCK STATUS */}
+          <p className={`mt-2 text-sm font-semibold ${
+            isOutOfStock ? "text-red-600" : "text-green-700"
+          }`}>
+            {isOutOfStock
+              ? "Out of Stock"
+              : `In Stock: ${stock}`}
+          </p>
+
           <p className="mt-1 text-xs leading-5 text-[#8A745D]">
             A timeless design for those who appreciate
             classic elegance and distinctive style.
@@ -220,10 +236,11 @@ function ProductDetails() {
 
               <button
                 type="button"
+                disabled={isOutOfStock || quantity <= 1}
                 onClick={() =>
                   setQuantity((current) => Math.max(1, current - 1))
                 }
-                className="px-4 py-1.5 text-lg hover:bg-[#E5D8C5]"
+                className="px-4 py-1.5 text-lg hover:bg-[#E5D8C5] disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Decrease quantity"
               >
                 −
@@ -235,10 +252,11 @@ function ProductDetails() {
 
               <button
                 type="button"
+                disabled={isOutOfStock || quantity >= stock}
                 onClick={() =>
-                  setQuantity((current) => current + 1)
+                  setQuantity((current) => Math.min(stock, current + 1))
                 }
-                className="px-4 py-1.5 text-lg hover:bg-[#E5D8C5]"
+                className="px-4 py-1.5 text-lg hover:bg-[#E5D8C5] disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Increase quantity"
               >
                 +
@@ -251,10 +269,18 @@ function ProductDetails() {
           <button
             type="button"
             onClick={handleAddToCart}
-            className="mt-2 w-full bg-[#30251E] px-5 py-2.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#F4EFE5] transition hover:bg-[#A17D49]"
+            disabled={isOutOfStock}
+            className={`mt-2 w-full px-5 py-2.5 text-[10px] font-semibold uppercase tracking-[0.2em] transition ${
+              isOutOfStock
+                ? "cursor-not-allowed bg-[#D9CBB7] text-[#766657]"
+                : "bg-[#30251E] text-[#F4EFE5] hover:bg-[#A17D49]"
+            }`}
           >
-            Add to Cart — ₹
-            {(Number(product.price) * quantity).toLocaleString("en-IN")}
+            {isOutOfStock
+              ? "Out of Stock"
+              : `Add to Cart — ₹${(
+                  Number(product.price) * quantity
+                ).toLocaleString("en-IN")}`}
           </button>
 
           {/* ADD TO WISHLIST */}
