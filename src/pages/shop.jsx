@@ -12,6 +12,7 @@ function Shop() {
 
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("default");
+  const [selectedType, setSelectedType] = useState("All");
   const [currentPage, setCurrentPage] = useState(1);
 
   const products = Array.isArray(data)
@@ -23,12 +24,12 @@ function Shop() {
 
   const productsPerPage = 8;
 
-  // Get unique brands dynamically
-  const brands = useMemo(() => {
+  // Get unique watch types dynamically
+  const watchTypes = useMemo(() => {
     return [
       ...new Set(
         products
-          .map((product) => product.brand?.trim())
+          .map((product) => product.type?.trim())
           .filter(Boolean)
       ),
     ].sort((a, b) => a.localeCompare(b));
@@ -70,6 +71,15 @@ function Shop() {
       );
     }
 
+    // Filter by watch type
+    if (selectedType !== "All") {
+      result = result.filter(
+        (product) =>
+          product.type?.toLowerCase() ===
+          selectedType.toLowerCase()
+      );
+    }
+
     // Filter by search
     if (search.trim()) {
       const searchText = search.toLowerCase();
@@ -94,17 +104,6 @@ function Shop() {
       );
     }
 
-    // Filter by brand
-    if (sortBy.startsWith("brand-")) {
-      const selectedBrand = sortBy.replace("brand-", "");
-
-      result = result.filter(
-        (product) =>
-          product.brand?.toLowerCase() ===
-          selectedBrand.toLowerCase()
-      );
-    }
-
     // Sorting
     if (sortBy === "price-low") {
       result.sort((a, b) => a.price - b.price);
@@ -126,6 +125,7 @@ function Shop() {
     products,
     selectedCategory,
     selectedCollection,
+    selectedType,
     search,
     sortBy,
   ]);
@@ -133,7 +133,13 @@ function Shop() {
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedCategory, selectedCollection, search, sortBy]);
+  }, [
+    selectedCategory,
+    selectedCollection,
+    selectedType,
+    search,
+    sortBy,
+  ]);
 
   // Pagination
   const totalPages = Math.ceil(
@@ -161,6 +167,7 @@ function Shop() {
   const clearFilters = () => {
     setSearch("");
     setSortBy("default");
+    setSelectedType("All");
     setSearchParams({});
     setCurrentPage(1);
   };
@@ -169,6 +176,7 @@ function Shop() {
   const hasActiveFilters =
     selectedCategory !== "All" ||
     selectedCollection !== "All" ||
+    selectedType !== "All" ||
     search.trim() !== "" ||
     sortBy !== "default";
 
@@ -207,9 +215,10 @@ function Shop() {
         ))}
       </div>
 
-      {/* Search and Sort */}
+      {/* Search and Filters */}
       <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
 
+        {/* Search */}
         <input
           type="text"
           placeholder="Search watches..."
@@ -218,13 +227,29 @@ function Shop() {
           className="w-full rounded-lg border border-[#D9CBB7] bg-white px-4 py-3 text-sm text-[#30251E] outline-none focus:border-[#A17D49] md:max-w-sm"
         />
 
-        <div className="flex flex-wrap items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3">
 
+          {/* Product Count */}
           <p className="text-sm text-[#766657]">
             {filteredProducts.length} watches found
           </p>
 
-          {/* Combined Sort and Brand Filter */}
+          {/* Watch Type Filter */}
+          <select
+            value={selectedType}
+            onChange={(e) => setSelectedType(e.target.value)}
+            className="rounded-lg border border-[#D9CBB7] bg-white px-4 py-3 text-sm text-[#30251E] outline-none focus:border-[#A17D49]"
+          >
+            <option value="All">All Watch Types</option>
+
+            {watchTypes.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </select>
+
+          {/* Sort Dropdown */}
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
@@ -244,17 +269,6 @@ function Shop() {
 
             <optgroup label="Other Sorting">
               <option value="newest">Newest First</option>
-            </optgroup>
-
-            <optgroup label="Filter By Brand">
-              {brands.map((brand) => (
-                <option
-                  key={brand}
-                  value={`brand-${brand}`}
-                >
-                  {brand}
-                </option>
-              ))}
             </optgroup>
           </select>
 

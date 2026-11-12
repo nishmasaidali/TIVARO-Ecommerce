@@ -4,57 +4,13 @@ import {
   useContext,
   useState,
   useEffect,
+  useRef,
 } from "react";
 
 import { useAuth } from "./authcontext";
+import axiosInstance from "../api/axiosinstance";
 
 const WishlistContext = createContext();
-
-// Get unique key for each user
-function getUserKey(user) {
-  if (!user) return null;
-
-  return user.id
-    ? String(user.id)
-    : user.email
-      ? String(user.email).trim().toLowerCase()
-      : null;
-}
-
-// Read saved wishlist
-function getSavedWishlist(user, userKey) {
-  if (!userKey) return [];
-
-  try {
-    const idKey = `wishlist_${userKey}`;
-    const savedData = localStorage.getItem(idKey);
-
-    if (savedData !== null) {
-      const products = JSON.parse(savedData);
-      return Array.isArray(products) ? products : [];
-    }
-
-    // Migrate old email-based wishlist if ID storage does not exist
-    if (user?.email) {
-      const emailKey = `wishlist_${user.email.trim().toLowerCase()}`;
-      const emailData = localStorage.getItem(emailKey);
-
-      if (emailData !== null) {
-        const products = JSON.parse(emailData);
-        const validProducts = Array.isArray(products) ? products : [];
-
-        localStorage.setItem(idKey, JSON.stringify(validProducts));
-
-        return validProducts;
-      }
-    }
-
-    return [];
-  } catch (error) {
-    console.error("Wishlist loading error:", error);
-    return [];
-  }
-}
 
 // Toast message
 function showToast(message, type = "wishlist") {
@@ -68,65 +24,193 @@ function showToast(message, type = "wishlist") {
 export function WishlistProvider({ children }) {
   const { currentUser } = useAuth();
 
-  const userKey = getUserKey(currentUser);
+  const userId =
+    currentUser?.id != null
+      ? String(currentUser.id)
+      : null;
 
   const [wishlistData, setWishlistData] = useState({
-    userKey: null,
+    userId: null,
     items: [],
+    loaded: false,
   });
 
-  // Load wishlist whenever the logged-in user changes
+  // Store each user's wishlist record ID
+  const wishlistRecords = useRef({});
+
+  // Keep backend updates in order
+  const saveQueue = useRef(Promise.resolve());
+
+  // Load wishlist from db.json
   useEffect(() => {
-    if (!userKey) {
+    let active = true;
+
+    if (!userId) {
       setWishlistData({
-        userKey: null,
+        userId: null,
         items: [],
+        loaded: true,
       });
       return;
     }
 
-    const savedProducts = getSavedWishlist(currentUser, userKey);
-
     setWishlistData({
-      userKey,
-      items: savedProducts,
+      userId,
+      items: [],
+      loaded: false,
     });
-  }, [userKey]);
 
-  // Display only the wishlist belonging to the current user
+    async function fetchWishlist() {
+      try {
+        const response = await axiosInstance.get("/wishlist", {
+          params: { userId },
+        });
+
+        const savedWishlist = response.data[0] || null;
+
+        if (!active) return;
+
+        if (savedWishlist) {
+          wishlistRecords.current[userId] = savedWishlist;
+        }
+
+        setWishlistData({
+          userId,
+          items: savedWishlist?.items || [],
+          loaded: true,
+        });
+      } catch (error) {
+        console.error("Error loading wishlist:", error);
+
+        if (active) {
+          setWishlistData({
+            userId,
+            items: [],
+            loaded: true,
+          });
+
+          showToast(
+            "Unable to load your wishlist.",
+            "error"
+          );
+        }
+      }
+    }
+
+    fetchWishlist();
+
+    return () => {
+      active = false;
+    };
+  }, [userId]);
+
+  // Display only the logged-in user's wishlist
   const wishlist =
-    userKey && wishlistData.userKey === userKey
+    userId &&
+    wishlistData.userId === userId &&
+    wishlistData.loaded
       ? wishlistData.items
       : [];
 
-  // Add product
-  const addToWishlist = (product) => {
-    if (!userKey || wishlistData.userKey !== userKey) {
-      showToast("Please login to add products to your wishlist.", "info");
+  // Save wishlist in db.json
+  const saveWishlistToDB = (targetUserId, items) => {
+    const operation = saveQueue.current.then(async () => {
+      const savedWishlist =
+        wishlistRecords.current[targetUserId];
+
+      if (savedWishlist) {
+        await axiosInstance.patch(
+          `/wishlist/${savedWishlist.id}`,
+          { items }
+        );
+      } else {
+        const response = await axiosInstance.post(
+          "/wishlist",
+          {
+            userId: targetUserId,
+            items,
+          }
+        );
+
+        wishlistRecords.current[targetUserId] =
+          response.data;
+      }
+    });
+
+    saveQueue.current = operation.catch((error) => {
+      console.error("Error saving wishlist:", error);
+
+      showToast(
+        "Unable to save your wishlist. Please try again.",
+        "error"
+      );
+    });
+
+    return saveQueue.current;
+  };
+
+  // Update wishlist
+  const setWishlist = (newWishlist) => {
+    if (
+      !userId ||
+      wishlistData.userId !== userId ||
+      !wishlistData.loaded
+    ) {
       return;
     }
 
-    const exists = wishlistData.items.some(
+    const updatedWishlist =
+      typeof newWishlist === "function"
+        ? newWishlist(wishlistData.items)
+        : newWishlist;
+
+    setWishlistData((previous) => ({
+      ...previous,
+      items: updatedWishlist,
+    }));
+
+    saveWishlistToDB(userId, updatedWishlist);
+  };
+
+  // Add product to wishlist
+  const addToWishlist = (product) => {
+    if (!userId) {
+      showToast(
+        "Please login to add products to your wishlist.",
+        "info"
+      );
+      return;
+    }
+
+    if (
+      !wishlistData.loaded ||
+      wishlistData.userId !== userId
+    ) {
+      showToast(
+        "Please wait while your wishlist loads.",
+        "info"
+      );
+      return;
+    }
+
+    const exists = wishlist.some(
       (item) => String(item.id) === String(product.id)
     );
 
     if (exists) {
-      showToast("This product is already in your wishlist.", "info");
+      showToast(
+        "This product is already in your wishlist.",
+        "info"
+      );
       return;
     }
 
-    const updatedWishlist = [...wishlistData.items, product];
+    const updatedWishlist = [
+      ...wishlist,
+      product,
+    ];
 
-    // Save immediately
-    localStorage.setItem(
-      `wishlist_${userKey}`,
-      JSON.stringify(updatedWishlist)
-    );
-
-    setWishlistData({
-      userKey,
-      items: updatedWishlist,
-    });
+    setWishlist(updatedWishlist);
 
     showToast(
       `${product.name || "Product"} added to your wishlist.`,
@@ -134,25 +218,22 @@ export function WishlistProvider({ children }) {
     );
   };
 
-  // Remove product
+  // Remove product from wishlist
   const removeFromWishlist = (productId) => {
-    if (!userKey || wishlistData.userKey !== userKey) return;
+    if (!userId || wishlistData.userId !== userId) {
+      return;
+    }
 
-    const updatedWishlist = wishlistData.items.filter(
+    const updatedWishlist = wishlist.filter(
       (item) => String(item.id) !== String(productId)
     );
 
-    localStorage.setItem(
-      `wishlist_${userKey}`,
-      JSON.stringify(updatedWishlist)
+    setWishlist(updatedWishlist);
+
+    showToast(
+      "Product removed from your wishlist.",
+      "info"
     );
-
-    setWishlistData({
-      userKey,
-      items: updatedWishlist,
-    });
-
-    showToast("Product removed from your wishlist.", "info");
   };
 
   // Check whether product is in wishlist
@@ -162,19 +243,13 @@ export function WishlistProvider({ children }) {
     );
   };
 
-  // Clear wishlist only when explicitly requested
+  // Clear wishlist
   const clearWishlist = () => {
-    if (!userKey || wishlistData.userKey !== userKey) return;
+    if (!userId || wishlistData.userId !== userId) {
+      return;
+    }
 
-    localStorage.setItem(
-      `wishlist_${userKey}`,
-      JSON.stringify([])
-    );
-
-    setWishlistData({
-      userKey,
-      items: [],
-    });
+    setWishlist([]);
   };
 
   return (
@@ -185,6 +260,7 @@ export function WishlistProvider({ children }) {
         removeFromWishlist,
         isInWishlist,
         clearWishlist,
+        isWishlistLoading: !wishlistData.loaded,
       }}
     >
       {children}

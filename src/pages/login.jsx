@@ -37,6 +37,15 @@ function Login() {
         return;
       }
 
+      // Check whether the user is blocked
+      if (user.blocked === true) {
+        setError(
+          "Your account has been blocked. Please contact the administrator."
+        );
+        return;
+      }
+
+      // Login only if the user is active
       login({
         id: user.id,
         name: user.name,
@@ -55,8 +64,6 @@ function Login() {
   return (
     <div className="flex min-h-[85vh] items-center justify-center bg-[#F4EFE5] px-5 py-10">
       <div className="grid w-full max-w-5xl overflow-hidden rounded-sm bg-white shadow-xl md:grid-cols-2">
-
-        {/* BRAND SECTION */}
 
         <div className="flex flex-col items-center justify-center bg-[#30251E] px-10 py-16 text-center text-[#F4EFE5]">
           <h1 className="text-4xl font-medium tracking-[8px]">
@@ -79,8 +86,6 @@ function Login() {
           </span>
         </div>
 
-        {/* LOGIN FORM */}
-
         <div className="px-8 py-14 sm:px-12">
           <h2 className="font-serif text-3xl text-[#30251E]">
             Welcome Back
@@ -91,7 +96,6 @@ function Login() {
           </p>
 
           <form onSubmit={handleSubmit} className="mt-9">
-
             <label className="mb-2 block text-sm text-[#30251E]">
               Email Address
             </label>

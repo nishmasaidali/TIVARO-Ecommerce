@@ -4,32 +4,13 @@ import {
   useContext,
   useState,
   useEffect,
+  useRef,
 } from "react";
 
 import { useAuth } from "./authcontext";
+import axiosInstance from "../api/axiosinstance";
 
 const CartContext = createContext();
-
-function getUserKey(user) {
-  if (!user) return null;
-
-  const userId = user.id ?? user.email;
-
-  return userId ? String(userId) : null;
-}
-
-function getSavedCart(userKey) {
-  if (!userKey) return [];
-
-  try {
-    const savedCart = localStorage.getItem(`cart_${userKey}`);
-    const parsedCart = savedCart ? JSON.parse(savedCart) : [];
-
-    return Array.isArray(parsedCart) ? parsedCart : [];
-  } catch {
-    return [];
-  }
-}
 
 function showToast(message, type = "success", title) {
   window.dispatchEvent(
@@ -42,68 +23,161 @@ function showToast(message, type = "success", title) {
 export function CartProvider({ children }) {
   const { currentUser } = useAuth();
 
-  const userKey = getUserKey(currentUser);
+  const userId =
+    currentUser?.id != null
+      ? String(currentUser.id)
+      : null;
 
-  const [cartData, setCartData] = useState(() => ({
-    userKey,
-    items: getSavedCart(userKey),
-  }));
+  const [cartData, setCartData] = useState({
+    userId: null,
+    items: [],
+    loaded: false,
+  });
 
-  // Load the correct cart whenever the logged-in user changes
+  // Store each user's cart record ID
+  const cartRecords = useRef({});
+
+  // Keep backend updates in order
+  const saveQueue = useRef(Promise.resolve());
+
+  // Load cart from db.json
   useEffect(() => {
-    if (!userKey) {
+    let active = true;
+
+    if (!userId) {
       setCartData({
-        userKey: null,
+        userId: null,
         items: [],
+        loaded: true,
       });
       return;
     }
 
     setCartData({
-      userKey,
-      items: getSavedCart(userKey),
+      userId,
+      items: [],
+      loaded: false,
     });
-  }, [userKey]);
 
-  // Show cart only when it belongs to the current user
+    async function fetchCart() {
+      try {
+        const response = await axiosInstance.get("/cart", {
+          params: { userId },
+        });
+
+        const savedCart = response.data[0] || null;
+
+        if (!active) return;
+
+        if (savedCart) {
+          cartRecords.current[userId] = savedCart;
+        }
+
+        setCartData({
+          userId,
+          items: savedCart?.items || [],
+          loaded: true,
+        });
+      } catch (error) {
+        console.error("Error loading cart:", error);
+
+        if (active) {
+          setCartData({
+            userId,
+            items: [],
+            loaded: true,
+          });
+
+          showToast(
+            "Unable to load your cart.",
+            "error",
+            "Cart Error"
+          );
+        }
+      }
+    }
+
+    fetchCart();
+
+    return () => {
+      active = false;
+    };
+  }, [userId]);
+
+  // Show cart only for the logged-in user
   const cart =
-    userKey && cartData.userKey === userKey
+    userId &&
+    cartData.userId === userId &&
+    cartData.loaded
       ? cartData.items
       : [];
 
-  // Save cart separately for each user
-  useEffect(() => {
-    if (!userKey || cartData.userKey !== userKey) return;
+  // Save cart in db.json
+  const saveCartToDB = (targetUserId, items) => {
+    const operation = saveQueue.current.then(async () => {
+      const savedCart = cartRecords.current[targetUserId];
 
-    localStorage.setItem(
-      `cart_${userKey}`,
-      JSON.stringify(cartData.items)
-    );
-  }, [cartData, userKey]);
+      if (savedCart) {
+        await axiosInstance.patch(
+          `/cart/${savedCart.id}`,
+          { items }
+        );
+      } else {
+        const response = await axiosInstance.post("/cart", {
+          userId: targetUserId,
+          items,
+        });
+
+        cartRecords.current[targetUserId] = response.data;
+      }
+    });
+
+    saveQueue.current = operation.catch((error) => {
+      console.error("Error saving cart:", error);
+
+      showToast(
+        "Unable to save your cart. Please try again.",
+        "error",
+        "Cart Error"
+      );
+    });
+
+    return saveQueue.current;
+  };
 
   // Update cart
   const setCart = (newCart) => {
-    if (!userKey || cartData.userKey !== userKey) return;
+    if (
+      !userId ||
+      cartData.userId !== userId ||
+      !cartData.loaded
+    ) {
+      return;
+    }
+
+    const updatedCart =
+      typeof newCart === "function"
+        ? newCart(cartData.items)
+        : newCart;
 
     setCartData((previous) => ({
       ...previous,
-      items:
-        typeof newCart === "function"
-          ? newCart(previous.items)
-          : newCart,
+      items: updatedCart,
     }));
+
+    saveCartToDB(userId, updatedCart);
   };
 
-  // Check whether a product is already in cart
+  // Check whether product is already in cart
   const isInCart = (productId) => {
     return cart.some(
       (item) => String(item.id) === String(productId)
     );
   };
 
-  // Add product only when stock is available
+  // Add product to cart
   const addToCart = (product) => {
-    if (!userKey || cartData.userKey !== userKey) {
+    if (!userId) {
       showToast(
         "Please login to add products to your cart.",
         "info",
@@ -112,9 +186,17 @@ export function CartProvider({ children }) {
       return;
     }
 
+    if (!cartData.loaded || cartData.userId !== userId) {
+      showToast(
+        "Please wait while your cart loads.",
+        "info",
+        "Loading Cart"
+      );
+      return;
+    }
+
     const stock = Number(product.stock ?? 0);
 
-    // Check stock
     if (!Number.isFinite(stock) || stock <= 0) {
       showToast(
         "This watch is currently out of stock.",
@@ -124,10 +206,7 @@ export function CartProvider({ children }) {
       return;
     }
 
-    // Check whether product already exists
-    const alreadyExists = cart.some(
-      (item) => String(item.id) === String(product.id)
-    );
+    const alreadyExists = isInCart(product.id);
 
     if (alreadyExists) {
       showToast(
@@ -143,7 +222,6 @@ export function CartProvider({ children }) {
       Number(product.quantity) || 1
     );
 
-    // Prevent adding more than available stock
     if (requestedQuantity > stock) {
       showToast(
         `Only ${stock} watches are available.`,
@@ -168,7 +246,7 @@ export function CartProvider({ children }) {
     );
   };
 
-  // Remove product completely
+  // Remove product
   const removeFromCart = (productId) => {
     const product = cart.find(
       (item) => String(item.id) === String(productId)
@@ -227,7 +305,7 @@ export function CartProvider({ children }) {
     );
   };
 
-  // Clear cart after placing an order
+  // Clear cart after checkout
   const clearCart = () => {
     setCart([]);
   };
@@ -242,6 +320,7 @@ export function CartProvider({ children }) {
         updateQuantity,
         isInCart,
         clearCart,
+        isCartLoading: !cartData.loaded,
       }}
     >
       {children}

@@ -1,6 +1,8 @@
 
 import { useMemo, useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+
 import { useCart } from "../context/cartcontext";
 import { useAuth } from "../context/authcontext";
 import axiosInstance from "../api/axiosinstance";
@@ -28,6 +30,7 @@ function getSavedOrders(userKey) {
 function Orders() {
   const { addToCart } = useCart();
   const { currentUser } = useAuth();
+  const queryClient = useQueryClient();
 
   const userKey = String(
     currentUser?.id ?? currentUser?.email ?? "guest"
@@ -208,11 +211,16 @@ function Orders() {
     setIsCancelling(true);
 
     try {
-      // Update the order in db.json
+      // Update order and restore product stock in db.json
       const updatedOrder = await cancelOrderApi(
         orderId,
         reason.trim()
       );
+
+      // Refresh product data to show restored stock
+      await queryClient.invalidateQueries({
+        queryKey: ["products"],
+      });
 
       // Update the displayed orders
       const updatedOrders = orders.map((order) =>
@@ -315,7 +323,6 @@ function Orders() {
 
   return (
     <main className="flex h-[calc(100dvh-72px)] flex-col overflow-hidden bg-[#F4EFE5] px-4 py-5 text-[#30251E] sm:px-7 md:px-10 md:py-6">
-
       <div className="mx-auto flex h-full w-full max-w-6xl flex-col">
 
         {/* Heading */}

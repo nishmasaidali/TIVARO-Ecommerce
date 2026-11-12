@@ -43,8 +43,7 @@
       "name": "Antique Brown",
       "brand": "TIVARO",
       "price": 5499,
-      "stock": 10
-      ,
+      "stock": 10,
       "category": "Men",
       "type": "Retro Leather",
       "image": "https://www.watchnation.com/cdn/shop/files/ra-bb0004y.jpg?v=1771299723&width=2048",
@@ -495,6 +494,14 @@
       "id": "DbZpHoqGwKM"
     }
   ],
+  "admins": [
+    {
+      "id": "1",
+      "name": "TIVARO Admin",
+      "email": "admin@tivaro.com",
+      "password": "admin123"
+    }
+  ],
   "orders": [
     {
       "id": "N3xwAsJdsQQ",
@@ -626,7 +633,7 @@
           "name": "Antique Brown",
           "brand": "TIVARO",
           "price": 5499,
-          "stock": 9,
+          "stock": 10,
           "category": "Men",
           "type": "Retro Leather",
           "image": "https://www.watchnation.com/cdn/shop/files/ra-bb0004y.jpg?v=1771299723&width=2048",
@@ -810,7 +817,6 @@
           "name": "Vintage Racer",
           "brand": "TIVARO",
           "price": 13999,
-          "stock": 10,
           "category": "Men",
           "type": "Motorsport Chronograph",
           "image": "https://www.analogshift.com/cdn/shop/files/AS08950_40991600_GIGANDET_THREEREGISTERCHRONOGRAPH_2009-6.jpg?v=1730492633&width=1500",
@@ -838,9 +844,84 @@
       "totalItems": 1,
       "total": 13999,
       "estimatedDelivery": "2026-11-12T05:15:51.489Z"
+    },
+    {
+      "id": "a76zPH504ow",
+      "userId": "P253W76_7YU",
+      "orderDate": "2026-11-10T07:26:55.070Z",
+      "status": "Cancelled",
+      "items": [
+        {
+          "id": "2",
+          "name": "Royal Rose Gold",
+          "brand": "TIVARO",
+          "price": 8999,
+          "stock": 10,
+          "category": "Women",
+          "type": "Rose Gold Dress Watch",
+          "image": "https://gcpremiumjewellery.com/cdn/shop/files/13-1.jpg?v=1751280281&width=1445",
+          "description": "A vintage-inspired rose gold dress watch featuring ivory dial with crystal-style bezel and a rose gold bracelet. Designed for timeless TIVARO styling.",
+          "featured": true,
+          "newArrival": false,
+          "createdAt": "2026-10-30",
+          "collection": "Party & Evening",
+          "occasion": "Parties / Weddings",
+          "style": "Rose Gold Dress Watch",
+          "strap": "Rose Gold Bracelet",
+          "dial": "Ivory Dial with Crystal-Style Bezel",
+          "quantity": 3
+        }
+      ],
+      "customer": {
+        "name": "shahma",
+        "email": "shahma@gmail.com",
+        "phone": "9037931939",
+        "address": "pulavazhi(H),puzhakkattiri",
+        "city": "perinthalmanna",
+        "pincode": "673921"
+      },
+      "paymentMethod": "Cash on Delivery",
+      "totalItems": 3,
+      "total": 26997,
+      "estimatedDelivery": "2026-11-15T07:26:55.071Z",
+      "cancelledAt": "2026-11-10T07:29:31.861Z",
+      "cancellationReason": "delivery date is too long",
+      "stockRestored": true
     }
   ],
-  "wishlist": [],
-  "cart": [],
+  "wishlist": [
+    {
+      "userId": "P253W76_7YU",
+      "items": [
+        {
+          "id": "1",
+          "name": "Heritage Silver",
+          "brand": "TIVARO",
+          "price": 7499,
+          "stock": 10,
+          "category": "Men",
+          "type": "Classic Vintage",
+          "image": "https://cdn.shopify.com/s/files/1/0926/5276/5450/files/herbelin-mens-classiques-38mm-brown-leather-strap-watch-p48366-88474_image.png",
+          "description": "A vintage-inspired classic vintage featuring ivory roman dial and a brown leather strap. Designed for timeless TIVARO styling.",
+          "featured": true,
+          "newArrival": false,
+          "createdAt": "2026-10-30",
+          "collection": "Vintage Essentials",
+          "occasion": "Everyday / Formal",
+          "style": "Classic Vintage",
+          "strap": "Brown Leather Strap",
+          "dial": "Ivory Roman Dial"
+        }
+      ],
+      "id": "6UVqUZkw_U4"
+    }
+  ],
+  "cart": [
+    {
+      "userId": "P253W76_7YU",
+      "items": [],
+      "id": "eS0uRgzaYRs"
+    }
+  ],
   "$schema": "./node_modules/json-server/schema.json"
 }
